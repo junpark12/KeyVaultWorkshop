@@ -183,6 +183,40 @@ builder.Configuration.AddAzureKeyVault(
 이 필터는 선택한 Secret의 **값 Get을 줄이는 앱 로직**입니다. Provider의 Secret 속성 목록 조회 자체를
 없애지 않으며 RBAC·Access Policy를 대신하는 보안 경계도 아닙니다.
 
+`Load()`는 목록에서 얻은 Secret 속성에 대해 값 로딩 여부를 판단합니다.
+`Allowed`는 배열이 아니라 이름 집합(`HashSet<string>`)이며, `Allowed.Contains(secret.Name)`이
+**`false`이면 해당 Secret의 값 Get과 Configuration 적재를 생략**합니다. 전체 이름·속성 List는 그대로 수행합니다.
+
+예를 들어 Vault에 활성화된 Secret이 100개 있고 앱은 10개만 사용한다면, 읽기 권한이 있다는 전제에서
+필터 없이 최초 로딩하면 100개 값을 가져오지만, 허용 이름을 10개로 제한하면 전체 목록을 열거한 뒤
+선택한 10개 값만 가져옵니다. **사용자 요청이 없어도 앱 시작 시 이 로딩이 수행**되며,
+이후 `IConfiguration` 읽기는 메모리 접근입니다.
+
+공유 Vault에서 앱 신원에 Vault 전체 읽기 권한을 주면 필터 밖의 Secret도 코드 변경으로 읽을 수 있습니다.
+실제 접근 제한은 Secret별 RBAC 등으로 별도 적용해야 하며, 필터만으로는 보안 경계가 만들어지지 않습니다.
+
+반대로 앱 신원에 **전체 목록 List 권한은 있지만 일부 Secret의 Get 권한만 있는 경우**,
+로딩 필터가 없으면 다음과 같이 앱 시작이 실패할 수 있습니다.
+
+**`AddAzureKeyVault()`를 사용하는 앱이 최초 로딩을 완료하고 정상 시작하려면,
+필터 유무와 관계없이 Vault 전체 Secret 목록의 List 권한이 반드시 필요합니다.**
+이 권한만으로 충분한 것은 아니며, 로딩 대상 Secret의 Get 권한도 필요합니다.
+이름을 지정하는 `SecretClient.GetSecretAsync()` 직접 조회에는 전체 List 권한이 필요하지 않습니다.
+
+```text
+앱 시작 → 전체 목록 List 성공
+        → 읽기 권한 없는 Secret의 Get 시도
+        → 403 발생 → Provider 최초 로딩 실패
+        → 예외를 처리하지 않으면 앱 시작 실패
+```
+
+Provider는 **403이 나온 Secret을 자동으로 건너뛰지 않습니다.** Configuration 방식을 유지하려면
+목록 열거 권한과 함께, 읽기가 허용된 이름만 선택하는 `Load()` 필터를 구성해야 합니다.
+또는 필요한 이름을 `SecretClient`로 직접 조회하여 전체 목록 열거를 피할 수 있습니다.
+
+**RBAC 권한은 합산됩니다.** Vault 수준의 전체 읽기 권한이 이미 있다면 일부 Secret에만 역할을
+추가해도 다른 Secret의 읽기 권한이 제한되지는 않습니다. 상위 범위에서 상속된 권한까지 함께 확인해야 합니다.
+
 ## 3. Vault 경계를 정한 뒤 호출 최적화
 
 ### 3.1 Configuration reload와 앱 캐시를 중복하지 않기

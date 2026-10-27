@@ -245,6 +245,18 @@ Portal에서는 **Vault → Access policies → Create → 필요한 작업 선�
 
 SP는 별도의 테넌트 사용자 계정을 나눠 쓰는 대신 **앱 전용 신원**으로 인증하는 방식입니다. Client Secret은 그 앱의 비밀번호에 해당하며, Key Vault에 저장된 실습용 Secret과 다른 자격 증명입니다. **SP를 쓴다고 비밀번호 관리 문제가 없어지는 것은 아닙니다.**
 
+아래는 Azure Cloud Shell의 로그인 신원으로 실습 Vault의 Secret을 조회한 예시입니다.
+CLI는 로그인한 신원을 사용하며, 이 명령 자체가 .NET 앱의 SP 인증을 설정하는 것은 아닙니다.
+
+```bash
+az keyvault secret show --vault-name keyvaultworkshop2 --name test --query value --output tsv
+```
+
+![Azure Cloud Shell에서 Azure CLI로 test Secret의 교육용 값을 조회한 결과](../Images/key-vault-cli-secret-read.png)
+
+`--query value --output tsv`는 Secret 값을 평문으로 출력합니다. 위 화면은 교육용 값이며,
+실제 자격 증명은 화면 공유·캡처·로그에 노출하지 않습니다.
+
 ### 2.7 SP로 Key Vault에 연동하는 절차 [Demo]
 
 **예시 구성:** 강사의 별도 실습 Vault에 가상 데이터만 넣고, 참가자 p01에게 읽기 전용 SP를 제공합니다. 참가자가 강사 개인 계정이나 CLI 로그인 토큰을 공유받는 방식은 사용하지 않습니다.

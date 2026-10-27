@@ -151,6 +151,7 @@ if ($LASTEXITCODE -ne 0) { throw "Secret read failed" }
 예상 출력:
 
 ```text
+authentication=DefaultAzureCredential credential selected: Azure.Identity.EnvironmentCredential
 credential=DefaultAzureCredential selector=EnvironmentCredential
 version=<version-id> value=[REDACTED]
 ```
@@ -171,6 +172,17 @@ if ($LASTEXITCODE -ne 0) { throw "Secret read failed" }
 
 Visual Studio 계정을 쓰려면 해당 로그인·권한을 준비하고 selector를 `VisualStudioCredential`로 바꿉니다. Windows 앱의 개발 도구 로그인과 WSL 로그인은 별개입니다.
 
+Azure CLI 인증을 선택하여 조회에 성공했을 때의 예상 출력:
+
+```text
+authentication=DefaultAzureCredential credential selected: Azure.Identity.AzureCliCredential
+credential=DefaultAzureCredential selector=AzureCliCredential
+version=<version-id> value=[REDACTED]
+```
+
+`authentication`은 SDK가 실제 선택한 인증 방식을 표시합니다. 이 경우 `az login`으로 로그인한
+계정을 사용하며, 해당 계정에 대상 Vault의 Secret 읽기 권한이 있어야 합니다.
+
 #### 기본 체인 비교 [Demo]
 
 ```powershell
@@ -185,6 +197,25 @@ Environment → Workload Identity → Managed Identity
 ```
 
 별표 경로에는 확장·패키지 등 조건이 있으며 브라우저는 기본 제외됩니다. `selector=default-chain`은 기본 체인을 사용한다는 표시이지, 실제 성공한 신원을 추적한 결과가 아닙니다.
+
+기본 체인에서 환경 변수의 SP + Client Secret으로 인증했을 때의 출력 예시:
+
+```text
+authentication=DefaultAzureCredential credential selected: Azure.Identity.EnvironmentCredential
+credential=DefaultAzureCredential selector=default-chain
+version=<version-id> value=[REDACTED]
+```
+
+기본 체인에서 Azure CLI 인증이 선택되어 성공했을 때의 예상 출력:
+
+```text
+authentication=DefaultAzureCredential credential selected: Azure.Identity.AzureCliCredential
+credential=DefaultAzureCredential selector=default-chain
+version=<version-id> value=[REDACTED]
+```
+
+두 경우 모두 `selector`는 `default-chain`이지만 **`authentication`에 출력된 방식이 실제 선택 결과**입니다.
+버전 ID는 조회한 Secret 버전에 따라 달라집니다.
 
 SP 환경 변수가 남아 있으면 먼저 선택될 수 있습니다. 잘못된 SP 비밀번호가 있다고 항상 CLI로 넘어가는 것도 아닙니다. 실습에서는 먼저 selector를 고정하여 실행 신원을 분명히 합니다. PC에서 selector를 MI로 바꾼다고 Managed Identity가 생성되지는 않습니다.
 
@@ -203,6 +234,72 @@ SP 환경 변수가 남아 있으면 먼저 선택될 수 있습니다. 잘못�
 <a id="configuration"></a>
 
 ### 3.2 방법 A — Configuration 통합
+
+#### 현재 샘플과 기존 web.config 방식의 차이
+
+현재 샘플은 **.NET Framework 4.8과 .NET 10 모두 `appsettings.json` 기반의
+`Microsoft.Extensions.Configuration`(`IConfiguration`)을 사용**합니다. Key Vault 모드에서는
+`AddAzureKeyVault()`로 Provider를 추가하여 같은 설정 키를 Key Vault 값으로 공급합니다.
+`GetConnectionString("Default")`는 `ConnectionStrings:Default`를 읽으며, 기존 `web.config`를 자동으로 읽지는 않습니다.
+
+| 구분 | 설정 원본·연동 | 앱의 읽기 코드 |
+|---|---|---|
+| 현재 샘플 | `appsettings.json` + 환경 변수 + Key Vault Provider | `configuration.GetConnectionString("Default")` |
+| 기존 ASP.NET Framework | `web.config`의 `<connectionStrings>` + Key Vault Configuration Builder | `ConfigurationManager.ConnectionStrings["Default"].ConnectionString` |
+
+**기존 읽기 코드를 유지하려면**, .NET Framework 4.7.1 이상에서
+`Microsoft.Configuration.ConfigurationBuilders.Azure` 패키지를 설치하고, `web.config`의
+`<configBuilders>`에 `AzureKeyVaultConfigBuilder`를 등록한 뒤 `<connectionStrings configBuilders="등록한이름">`으로
+연결합니다. Vault 주소·인증·Secret 이름 매핑을 별도로 구성해야 하며, 현재 샘플의 `AddAzureKeyVault()`나
+`ReloadInterval` 설정이 이 방식에 그대로 적용되는 것은 아닙니다. 이 경로는 이번 실행 실습에는 포함하지 않습니다.
+자세한 구성은 [ASP.NET Configuration Builders 공식 문서](https://learn.microsoft.com/aspnet/config-builder)를 참고합니다.
+
+`Microsoft.Configuration.ConfigurationBuilders.Azure` **3.x 기준**의 `web.config` 구성 예시입니다.
+기존 파일에 병합할 때 `<configSections>`는 `<configuration>`의 첫 번째 자식 요소로 둡니다.
+
+```xml
+<configuration>
+  <configSections>
+    <section name="configBuilders"
+             type="System.Configuration.ConfigurationBuildersSection, System.Configuration, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
+             restartOnExternalChanges="false"
+             requirePermission="false" />
+  </configSections>
+
+  <configBuilders>
+    <builders>
+      <add name="KeyVault"
+           type="Microsoft.Configuration.ConfigurationBuilders.AzureKeyVaultConfigBuilder, Microsoft.Configuration.ConfigurationBuilders.Azure"
+           vaultName="keyvaultworkshop2"
+           mode="Strict"
+           enabled="enabled"
+           prefix="ConnectionStrings--"
+           stripPrefix="true"
+           preloadSecretNames="false" />
+    </builders>
+  </configBuilders>
+
+  <connectionStrings configBuilders="KeyVault">
+    <add name="Default"
+         connectionString=""
+         providerName="System.Data.SqlClient" />
+  </connectionStrings>
+</configuration>
+```
+
+이 예시는 `prefix`를 붙여 Vault의 **`ConnectionStrings--Default`** Secret을 조회하고,
+앱에서는 기존 이름 **`Default`**로 읽도록 매핑합니다.
+
+```csharp
+string connectionString =
+    ConfigurationManager.ConnectionStrings["Default"].ConnectionString;
+```
+
+인증은 Builder 내부의 `DefaultAzureCredential`을 사용합니다. 로컬 SP 인증이면
+`AZURE_TENANT_ID`·`AZURE_CLIENT_ID`·`AZURE_CLIENT_SECRET`을 **실제 앱 프로세스에 전달**해야 합니다.
+이미 실행 중인 IIS에 PowerShell의 `$env:` 값이 자동 전달되는 것은 아닙니다.
+위 `Strict` + `preloadSecretNames="false"`는 등록된 이름을 개별 조회하며 전체 이름 List를 생략합니다.
+Secret 누락 시 빈 연결 문자열이 남을 수 있으므로 앱 시작 시 필수 값 검증도 필요합니다.
 
 #### 준비할 Secret
 

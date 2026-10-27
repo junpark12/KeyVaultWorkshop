@@ -253,6 +253,22 @@ Container Apps의 일반 앱 Secret 값을 직접 변경하는 것과 Key Vault 
 
 플랫폼 캐시·주기 조회·앱 수명 때문에 **값 변경 = 즉시 반영**이 아닙니다. Pinned 참조는 갱신 주기가 돌아도 다른 버전으로 바뀌지 않습니다.
 
+### 4.4 Configuration 주기 갱신과 앱 캐시 TTL 비교
+
+두 방식 모두 메모리에 값을 보관하지만, **Vault를 다시 조회하는 계기**가 다릅니다.
+
+| 구분 | Configuration + `ReloadInterval` | 캐시 프로젝트의 `CachedSecretReader` |
+|---|---|---|
+| 실습 설정 | `KeyVault__ReloadSeconds` | `KV_CACHE_TTL_SECONDS` |
+| 갱신 계기 | 공급자가 백그라운드에서 주기적으로 변경 확인 | 앱 요청 시 캐시가 없거나 TTL이 지났으면 조회 |
+| 앱에서 읽기 | `IConfiguration`에서 공급자의 현재 메모리 값 읽기 | `GetAsync()`에서 유효한 캐시 반환, 없거나 만료되면 Vault 조회 |
+| 앱 요청이 없어도 조회 | 자동 갱신을 켰다면 주기적으로 확인 | 조회하지 않음 |
+| 갱신 구현 | Key Vault Configuration Provider | 앱의 `CachedSecretReader` |
+
+예를 들어 캐시 TTL이 10초이고 `watch`가 5초마다 읽으면, 약 0초에는 Vault 조회, 5초에는 캐시 사용, 10초에는 TTL 만료로 Vault 재조회가 발생합니다. **TTL이 지나는 순간 자동으로 갱신하는 것이 아니라, 만료 후 첫 요청이 갱신합니다.** 재조회해도 Secret이 변경되지 않았다면 같은 버전이 반환됩니다.
+
+반면 Configuration 실습의 `--watch`는 현재 설정을 출력하는 주기일 뿐이며, `ReloadInterval`의 백그라운드 갱신과 독립적입니다. `IConfiguration`을 읽을 때마다 Vault를 호출하는 것은 아닙니다.
+
 ## 5. 환경별 구성 전략
 
 | 환경 | Vault 예 | 권장 구성 |

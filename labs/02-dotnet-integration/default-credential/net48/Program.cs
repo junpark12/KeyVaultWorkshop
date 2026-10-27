@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics.Tracing;
 using System.Threading;
 using System.Threading.Tasks;
+using Azure.Core.Diagnostics;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 using KeyVaultWorkshop;
@@ -23,6 +25,15 @@ internal static class Program
         Uri vaultUri = FrameworkLabSupport.VaultUri();
         string secretName = FrameworkLabSupport.SecretName();
         string selector = FrameworkLabSupport.CredentialSelector();
+
+        using var identityListener = new AzureEventSourceListener((eventData, message) =>
+        {
+            if (eventData.EventSource.Name == "Azure-Identity" &&
+                eventData.EventName == "DefaultAzureCredentialCredentialSelected")
+            {
+                Console.WriteLine("authentication=" + message);
+            }
+        }, EventLevel.Informational);
 
         var credential = new DefaultAzureCredential();
         var client = new SecretClient(vaultUri, credential, AzureClientFactory.CreateOptions());

@@ -241,6 +241,20 @@ namespace KeyVaultRetryParticipant
                 secret.Name, secretName, StringComparison.OrdinalIgnoreCase);
 
         public override string GetKey(KeyVaultSecret secret) => secret.Name;
+
+        // public override bool Load(SecretProperties secret)
+        // {
+        //     Console.WriteLine("Loading secret: " + secret.Name);
+        //     return true;
+        // }
+
+        // public override string GetKey(KeyVaultSecret secret)
+        // {
+        //     Console.WriteLine(
+        //         $"Secret value loaded: {secret.Name}, version={secret.Properties.Version}");
+
+        //     return secret.Name;
+        // }
     }
 
     internal sealed class RetryObservationPolicy : HttpPipelinePolicy

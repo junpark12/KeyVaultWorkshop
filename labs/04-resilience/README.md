@@ -238,6 +238,64 @@ watch ... value_present=true reload_notifications=0 observed_429=1
 공급자가 오류를 무시한다는 것은 장애가 해결되었다는 뜻이 아닙니다. 앱의 기존 값과 Secret 최신성,
 429 횟수, 마지막 성공 갱신 시점을 운영에서 별도로 관측해야 합니다.
 
+### 7.1 필터를 해제한 최초 로딩 관찰
+
+모듈 3에서 설명한 **“앱이 사용하는 키와 관계없이, 필터가 없으면 다른 Secret 값도 로딩한다”**는
+동작을 확인합니다. 강사 부하를 중지하고, 가상 값만 있는 교육용 Vault에서 전체 목록 List와
+대상 Secret 값 읽기 권한이 있는 신원으로 수행합니다.
+
+`SingleSecretManager`에는 기본 필터와 관찰용 코드가 주석으로 함께 들어 있습니다.
+기존 `Load()`·`GetKey()`를 주석 처리하고 아래 관찰용 두 메서드의 주석을 해제합니다.
+동일한 메서드가 중복 선언되지 않도록 합니다.
+
+```csharp
+public override bool Load(SecretProperties secret)
+{
+    Console.WriteLine("Loading secret: " + secret.Name);
+    return true;
+}
+
+public override string GetKey(KeyVaultSecret secret)
+{
+    Console.WriteLine(
+        $"Secret value loaded: {secret.Name}, version={secret.Properties.Version}");
+    return secret.Name;
+}
+```
+
+**소스를 변경했으므로 다시 빌드하여 실행합니다.** 아래 명령에는 `--no-build`를 넣지 않습니다.
+
+```powershell
+dotnet run --project $ParticipantProject -- configuration
+```
+
+`KV_SECRET_NAME=test`이고 Vault에 다음 세 Secret이 모두 활성화되어 있을 때의 관찰 예시입니다.
+버전 ID는 생략했으며 Secret 값은 출력하지 않습니다.
+
+```text
+Loading secret: ConnectionStrings--Default
+Loading secret: test
+Loading secret: workshop-demo-secret
+Secret value loaded: ConnectionStrings--Default, version=<version-id>
+Secret value loaded: test, version=<version-id>
+Secret value loaded: workshop-demo-secret, version=<version-id>
+initial_load=success value_present=true value_output=disabled
+```
+
+| 출력 | 의미 |
+|---|---|
+| `Loading secret: ...` | List로 얻은 이름·속성에 대해 `Load()`가 호출됨. 이 로그 자체는 값 Get 성공을 뜻하지 않음 |
+| `Secret value loaded: ...` | 값을 가져온 뒤 `GetKey()`에서 Configuration 키로 매핑함. HTTP 요청 시작·응답 시각을 나타내지는 않음 |
+| `initial_load=success` | 최초 로딩과 앱의 필수 값 확인이 완료됨 |
+
+앱은 `configuration[settings.SecretName]`으로 `test`만 읽지만, `Load()`가 모든 이름에
+`true`를 반환하므로 **최초 로딩에서 다른 두 Secret 값도 조회하여 메모리에 적재**합니다.
+사용자 요청이 없어도 이 작업이 수행됩니다. 이 예시는 최초 로딩 기준이며,
+주기 갱신에서는 `Load()`가 호출되어도 변경되지 않은 값은 재사용할 수 있습니다.
+
+관찰 후에는 두 메서드를 원래의 **이름 일치 필터와 로그 없는 `GetKey()`로 복원하고 다시 빌드**합니다.
+필터를 복원해도 전체 목록 List는 수행되지만, 값 Get 대상은 지정한 Secret 하나로 제한됩니다.
+
 ## 8. 소스 확인
 
 | 소스 | 확인할 부분 |
